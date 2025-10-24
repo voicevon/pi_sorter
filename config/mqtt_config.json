@@ -13,7 +13,8 @@
         "alerts": "pi_sorter/alerts",
         "statistics": "pi_sorter/statistics",
         "heartbeat": "pi_sorter/heartbeat",
-        "commands": "pi_sorter/commands"
+        "commands": "pi_sorter/commands",
+        "analysis": "pi_sorter/analysis"
     },
     "settings": {
         "qos": 1,

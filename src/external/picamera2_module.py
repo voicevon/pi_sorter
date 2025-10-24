@@ -56,7 +56,7 @@ class CSICamera:
         
     def initialize(self) -> bool:
         """
-        初始化CSI摄像头连接
+        初始化CSI摄像头连接 - 使用极简配置
         
         Returns:
             bool: 初始化是否成功
@@ -65,10 +65,8 @@ class CSICamera:
             # 创建Picamera2实例
             self.picam2 = Picamera2(self.camera_num)
             
-            # 配置摄像头
-            config = self.picam2.create_still_configuration(
-                main={"size": self.resolution, "format": "RGB888"}
-            )
+            # 极简配置，只设置分辨率 - 避免复杂的控制参数
+            config = self.picam2.create_still_configuration(main={"size": self.resolution})
             self.picam2.configure(config)
             
             # 启动摄像头
@@ -76,9 +74,6 @@ class CSICamera:
             
             # 等待摄像头稳定
             time.sleep(2)
-            
-            # 设置初始参数
-            self._apply_camera_settings()
             
             self.logger.info(f"CSI摄像头初始化成功: {self.resolution[0]}x{self.resolution[1]}")
             return True

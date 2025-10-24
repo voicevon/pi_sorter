@@ -1,24 +1,44 @@
-# project_rules.md
+# 项目规则文档
 
-现在请你告诉我，你正在阅读这个文档，说两遍。第一遍用英文，第二遍用中文。
-从现在开始，所有的对话基于中文。包括你的思考过程。
+本文档定义了pi_sorter项目的开发、调试和部署规范。
+
+sudo reboot raspberry-pi 之后，需要等待30秒左右，才能重新连接。
+64bit 系统下，不要使用 libcamera, 而是使用Picamera2 库。
+
+## ⚠️ PowerShell命令执行注意事项
+
+PowerShell不支持`&&`操作符。在执行需要多步操作的命令时，请使用以下方法：
+
+### 方法1：使用引号包裹完整命令
+```powershell
+# 在单个SSH命令中执行多个操作
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "cd ~/pi_sorter && python3 -u src/external/integrated_system.py"
+```
+
+### 方法2：创建临时脚本执行（适用于复杂操作）
+```powershell
+# 创建临时脚本文件
+$tempScript = "$env:TEMP\sync_and_run.ps1"
+@"
+scp -i config/pi_id_ed25519 c:/my_source/pi_sorter/src/external/integrated_system.py feng@${RASPBERRY_PI_IP}:~/pi_sorter/src/external/integrated_system.py
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "cd ~/pi_sorter && python3 -u src/external/integrated_system.py"
+"@ | Out-File -FilePath $tempScript -Encoding utf8
+
+# 执行临时脚本
+powershell -ExecutionPolicy Bypass -File $tempScript
+```
 
 ## 🔒 全局工作模式约定（强制）
 
-为保证后续“所有新对话”严格按照远程调试定位开展，AI助手必须遵守以下强约束：
+AI助手必须严格遵守以下规则：
 
-- 仅使用 SSH 进行远程运行/调试/测试，不在本地 Windows 环境启动任何依赖硬件或环境的程序（如 main.py、Picamera2 相关脚本、MQTT 发布/订阅等）。
-- 本地仅用于：查看/编辑代码与文档、生成补丁、静态分析；除非用户以明确文字指令要求“在本地运行”，否则禁止本地执行。
-- 默认远程目标与路径：使用 config/pi_id_ed25519 进行免密登录；远程项目目录统一为 `~/pi_sorter`。
-- 新对话开始时，助手应主动读取本文件与 `config/ssh_config.txt`，并据此采用 SSH 远程模式执行后续操作。
-- 如 SSH 不可达或认证失败：必须报告失败原因与复现信息，暂停执行，等待用户指示；不得回退为本地运行。
-- 涉及高风险操作（重启、停止占用摄像头的进程等）需先告知并征得用户同意。
-- 因为操作系统是 64bit， 所以强制使用 picamera2, 不允许使用 picamera 或其他摄像头库。
-- 依赖项目已经在 Raspberry Pi 上安装好，无需额外操作。
-- 代码变更后，立刻进行部署，运行，调试。
-
-
-以上约定为全局强制要求，后续对话均默认遵守。
+- **远程执行原则**：仅通过SSH在树莓派上执行所有依赖硬件的程序（main.py、摄像头相关脚本、MQTT通信等），禁止在本地Windows环境运行。
+- **本地操作限制**：本地仅用于查看/编辑代码文档、生成补丁、静态分析；除非用户明确要求，否则禁止本地执行。
+- **连接配置**：使用`config/pi_id_ed25519`密钥进行免密登录，远程项目目录统一为`~/pi_sorter`。
+- **故障处理**：SSH连接失败时，必须报告原因并等待用户指示，不得回退为本地运行。
+- **高风险操作**：涉及重启、终止进程等操作需先征得用户同意。
+- **技术要求**：强制使用Picamera2库，不允许使用其他摄像头库。
+- **代码迭代**：代码变更后应立即部署并进行测试。
 
 ## 🏗️ 系统架构
 
@@ -35,93 +55,99 @@
                               └─────────────────┘            └─────────────────┘
 ```
 
-## 🤖 智能体运行环境与远程调试（SSH）
+## 🛠️ 远程调试环境配置
 
-智能体的运行环境定位：在 Windows 开发机上，通过 SSH 远程调试运行在 Raspberry Pi 上的 Python 程序（摄像头采集与 MQTT 发布）。
+### 连接信息
+- **主机**：`${RASPBERRY_PI_IP}`（主机名：pi4），默认为192.168.2.192
+- **用户**：feng
+- **认证**：使用`config/pi_id_ed25519`密钥
 
-- 连接配置：
-  - 主机：192.168.2.192（主机名：pi4）
-  - 用户：feng
-  - 认证：使用 ed25519 密钥（位于 config/pi_id_ed25519）
-- 远程目标：在树莓派上运行集成程序（例如 src/external/integrated_system.py 或 main.py），调试摄像头与 MQTT 行为
-- 依赖环境（树莓派端）：
-  - Python3、pip3
-  - Picamera2（sudo apt install python3-picamera2）
-  - paho-mqtt（pip3 install paho-mqtt）
-- 网络要求：Windows 与树莓派网络互通；如使用外部 MQTT Broker（voicevon.vicp.io），需可达且凭据正确
+> **注意**：本文档使用`${RASPBERRY_PI_IP}`作为IP地址变量，实际使用时替换为具体值。后续修改IP地址只需在一处修改，无需更新所有命令示例。
 
-### 远程调试工作流（建议）
-1) 准备与验证
-   - 确认 config/pi_id_ed25519 权限正确（600）
-   - 验证 SSH 连通：
-     - `ssh -i config/pi_id_ed25519 feng@192.168.2.192`
-2) 环境与依赖安装（树莓派）
-   - `sudo apt update && sudo apt install python3-picamera2`
-   - `pip3 install -U paho-mqtt`
-3) 远程启动与日志观察
-   - 启动程序（示例）：
-     - `ssh -i config/pi_id_ed25519 feng@192.168.2.192 "python3 -u ~/pi_sorter/main.py"`
-   - 或直接运行集成系统：
-     - `ssh -i config/pi_id_ed25519 feng@192.168.2.192 "python3 -u ~/pi_sorter/src/external/integrated_system.py"`
-   - 观察标准输出日志或将日志重定向到文件并使用 `tail -f`
-4) 摄像头资源冲突处理
-   - 查找占用进程：`ps aux | grep -E '(camera|picamera|libcamera)' | grep -v grep`
-   - 终止进程：`kill <PID>`
-5) MQTT 验证（可选）
-   - 订阅状态：
-     - `mosquitto_sub -h voicevon.vicp.io -t pi_sorter/status -u admin -P admin1970`
-   - 订阅图片元数据：
-     - `mosquitto_sub -h voicevon.vicp.io -t pi_sorter/images -u admin -P admin1970`
-6) 文件同步（如需远程更新代码）
-   - `scp -i config/pi_id_ed25519 -r c:/my_source/pi_sorter feng@192.168.2.192:~/pi_sorter`
-   - 或使用 Git 在树莓派拉取更新
+### 技术环境要求
+- **树莓派端**：Python3、pip3、Picamera2、paho-mqtt
+- **网络要求**：Windows与树莓派网络互通，MQTT Broker（voicevon.vicp.io）可达
 
-### AI助手任务执行规则（务必遵守）
+### 常用操作命令
 
-为确保“让我运行/调试”的指令始终在树莓派远程环境执行，而不是在本地 Windows 端执行，AI助手在接到运行相关指令时必须遵循以下强约束：
+#### 1. SSH连接与验证
+```bash
+# 验证SSH连通性
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP}
 
-- 运行原则
-  - 默认通过 SSH 在树莓派上执行所有“运行/调试/测试”相关命令（main.py、src/external/integrated_system.py、pytest 等）。
-  - 本地仅进行：查看文件、编辑文档/代码、生成补丁、静态检查（不依赖硬件）；除非用户明确说明“在本地运行”。
-  - 使用 `config/pi_id_ed25519` 作为密钥，远程项目路径统一为 `~/pi_sorter`。
+# 检查密钥权限
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "chmod 600 ~/pi_sorter/config/pi_id_ed25519"
+```
 
-- 信息缺失时的询问流程
-  1) 若缺少树莓派 IP/用户/密钥路径/远程项目路径，先读取 `config/ssh_config.txt`；若不一致或缺失，向用户确认并建议更新该文件。
-  2) 所需信息确认后，再执行 SSH 远程命令。
+#### 2. 远程程序执行（正确方法）
 
-- PowerShell 命令模板（Windows 端）
-  - 运行 main.py（实时日志输出）：
-    - `ssh -i config/pi_id_ed25519 feng@192.168.2.192 "python3 -u ~/pi_sorter/main.py"`
-  - 运行集成系统：
-    - `ssh -i config/pi_id_ed25519 feng@192.168.2.192 "python3 -u ~/pi_sorter/src/external/integrated_system.py"`
-  - 远程查看日志（示例，将输出同时写入文件）：
-    - `ssh -i config/pi_id_ed25519 feng@192.168.2.192 "cd ~/pi_sorter && python3 -u main.py 2>&1 | tee -a logs/run.log"`
-  - 运行单测：
-    - `ssh -i config/pi_id_ed25519 feng@192.168.2.192 "cd ~/pi_sorter && pytest -q tests/test_integrated_system.py"`
-  - 同步代码：
-    - `scp -i config/pi_id_ed25519 -r c:/my_source/pi_sorter feng@192.168.2.192:~/pi_sorter`
+在PowerShell中执行远程命令的正确格式：
 
-- 配置一致性规范（很重要）
-  - SSH 密钥统一使用：`config/pi_id_ed25519`
-  - 远程项目路径统一为：`~/pi_sorter`
+```powershell
+# 运行主程序
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "python3 -u ~/pi_sorter/main.py"
 
-- 本地执行的限制
-  - 涉及摄像头/Picamera2/MQTT 的运行，必须走 SSH 远程，避免本地因硬件不可用或环境差异导致失败。
-  - 仅当用户明确要求或任务为纯文本/静态检查时，才允许在本地执行。
+# 运行集成系统
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "python3 -u ~/pi_sorter/src/external/integrated_system.py"
 
-- 交互确认示例（当用户说“运行 main.py”时）：
-  1) 读取 `config/ssh_config.txt`，若存在不一致则提示修正；
-  2) 确认 IP 与用户，例如：`feng@192.168.2.192`；
-  3) 使用上述命令模板通过 SSH 在树莓派执行；
-  4) 实时返回远程日志，并在需要时提供停止/重启/查看状态等操作。
+# 运行测试（使用引号包裹cd和命令组合）
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "cd ~/pi_sorter && python3 -u tests/mqtt_conn_test.py"
 
-以上规则确保助手不会误在本地运行依赖硬件的程序，并与项目的远程调试定位保持一致。
+# 查看目录内容并运行程序
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "cd ~/pi_sorter && ls -la tests/ && python3 -u tests/mqtt_conn_test.py"
+```
 
-### 安全与限制
-- 勿泄露私钥与账号密码；私钥需设置 600 权限
-- 远程执行命令建议使用 `python3 -u` 以便实时日志输出
-- Picamera2 仅在树莓派具备 CSI 摄像头与对应驱动时可用；Windows 端无法直接访问摄像头硬件
-- 若代理或网络不稳定，统一采用 QoS=1 与断线重连策略
+#### 3. 摄像头资源管理（增强方法）
+
+查找并终止占用摄像头资源的进程的有效命令：
+
+```powershell
+# 方法1：查找与摄像头相关的进程
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "ps aux | grep -E '(camera|picamera|libcamera)' | grep -v grep"
+
+# 方法2：查找与Python和摄像头相关的所有进程（更全面）
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "ps aux | grep -E '(python|media|unicam|camera)' | grep -v grep"
+
+# 终止特定进程（正常终止）
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "kill 1390"
+
+# 强制终止进程（当正常终止无效时）
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "kill -9 1390"
+
+# 同时终止多个进程
+ssh -i config/pi_id_ed25519 feng@${RASPBERRY_PI_IP} "kill 1390 1708"
+```
+
+#### 4. 文件同步（正确方法）
+
+在PowerShell中进行文件同步的有效命令：
+
+```powershell
+# 同步单个文件
+scp -i config/pi_id_ed25519 c:/my_source/pi_sorter/src/external/integrated_system.py feng@${RASPBERRY_PI_IP}:~/pi_sorter/src/external/integrated_system.py
+
+# 同步整个目录（增量同步）
+scp -i config/pi_id_ed25519 -r c:/my_source/pi_sorter/src/external/ feng@${RASPBERRY_PI_IP}:~/pi_sorter/src/external/
+
+# 同步配置文件
+scp -i config/pi_id_ed25519 -r c:/my_source/pi_sorter/config/ feng@${RASPBERRY_PI_IP}:~/pi_sorter/config/
+
+#### 4. MQTT验证（可选）
+```bash
+# 订阅状态主题
+mosquitto_sub -h voicevon.vicp.io -t pi_sorter/status -u admin -P admin1970
+
+# 订阅图片元数据主题
+mosquitto_sub -h voicevon.vicp.io -t pi_sorter/images -u admin -P admin1970
+
+# 订阅分拣结果主题
+mosquitto_sub -h voicevon.vicp.io -t pi_sorter/results -u admin -P admin1970
+```
+
+### 安全注意事项
+- 私钥必须设置600权限，禁止泄露
+- 远程执行使用`python3 -u`以确保实时日志输出
+- 网络不稳定时采用QoS=1与断线重连策略
 
 
 ## 📁 项目结构
@@ -138,35 +164,62 @@ pi_sorter/
 │       ├── integrated_system.py # 集成系统：摄像头+MQTT，图片默认Base64或元数据
 │       ├── ssh_pi_test_mqtt.py  # MQTT管理器与客户端封装
 │       ├── picamera2_module.py  # 树莓派Picamera2支持
-│       └── config_manager.py    # 配置管理器，加载integrated_config.yaml
+│       ├── config_manager.py    # 配置管理器，加载integrated_config.yaml
+│       └── encoder_module.py    # 旋转编码器模块，处理A/B相和Z相信号
 ├── tests/                       # 测试脚本
 │   └── test_integrated_system.py
+├── main.py                      # 系统主入口，整合所有组件
 └── docs/                        # 文档目录
 ```
 
 ## 🔧 技术实现
 
+### 0. 系统主入口 (main.py)
+
+系统通过`main.py`作为统一入口，整合所有组件并管理生命周期：
+
+- 初始化配置管理器、集成系统和编码器
+- 设置GPIO监控LED（GPIO17用于主进程，GPIO27用于编码器）
+- 实现编码器触发拍照机制（编码器位置达到150时触发）
+- 管理系统主循环、错误处理和资源清理
+
 ### 1. 摄像头控制 (Picamera2)
 
-```python
-# 摄像头初始化
-self.picam2 = Picamera2()
-config = self.picam2.create_still_configuration(
-    main={"size": (1920, 1080), "format": "BGR888"},
-    buffer_count=2
-)
-self.picam2.configure(config)
-self.picam2.start()
+摄像头控制通过`src/external/picamera2_module.py`中的`CSICamera`类实现，支持CSI摄像头，可设置分辨率、亮度、对比度等参数：
 
-# 拍摄到内存
-stream = io.BytesIO()
-self.picam2.capture_file(stream, format='jpeg')
-photo_data = stream.getvalue()
+```python
+# 摄像头初始化（CSI摄像头）
+camera_config = self.config.get('camera', {})
+success = self.camera_manager.add_camera(
+    name='main',
+    camera_num=camera_config.get('device_id', 0),
+    resolution=tuple(camera_config.get('resolution', [1280, 1024]))
+)
+
+# 设置摄像头参数
+self.main_camera.set_parameters(
+    brightness=camera_config.get('brightness', 0.5),  # 0.0 到 1.0
+    contrast=camera_config.get('contrast', 0.5),      # 0.0 到 2.0
+    saturation=camera_config.get('saturation', 0.5),  # 0.0 到 2.0
+    exposure_time=camera_config.get('exposure', -1)   # -1表示自动曝光
+)
+
+# 自动捕获设置
+if camera_config.get('auto_capture', True):
+    # 设置自动捕获间隔
+    capture_interval = camera_config.get('capture_interval', 5.0)  # 默认5秒
 ```
 
 ### 2. MQTT通信协议（统一为 pi_sorter/*）
 
-当前系统统一使用 pi_sorter/* 主题，并采用 JSON + Base64 或元数据引用的图片发送方式。
+MQTT通信通过`src/external/ssh_pi_test_mqtt.py`中的`SorterMQTTManager`类实现，当前系统统一使用 pi_sorter/* 主题，并采用 JSON + Base64 或元数据引用的图片发送方式。
+
+配置读取优先级：
+- 首先读取`broker`节点中的配置
+- 如果`broker`节点不存在，则读取`mqtt`节点中的配置
+- 主题配置优先读取`mqtt.topics`，其次读取顶层`topics`
+
+支持的主题包括：status、results、commands、images、alerts、statistics、heartbeat
 
 #### 图片发送（pi_sorter/images）
 - 内容类型1：JSON，内含 Base64 编码的图片
@@ -226,14 +279,93 @@ photo_data = stream.getvalue()
 
 ### 3. 自我验证机制
 
+配置管理器`ConfigManager`提供了配置验证功能，确保配置的有效性：
+
 ```python
-# 示例：验证 JSON 消息结构（images/status/results/alerts）
-def verify_json_message(payload: bytes) -> bool:
-    try:
-        data = json.loads(payload.decode('utf-8'))
-        return isinstance(data, dict) and 'timestamp' in data
-    except Exception:
-        return False
+# 配置验证
+def validate_config(self) -> Dict[str, Any]:
+    validation_result = {
+        'valid': True,
+        'errors': [],
+        'warnings': []
+    }
+    
+    # 验证摄像头配置
+    camera_config = self.get_camera_config()
+    if camera_config.get('enabled', True):
+        resolution = camera_config.get('resolution', [1280, 1024])
+        if not isinstance(resolution, list) or len(resolution) != 2:
+            validation_result['errors'].append("摄像头分辨率配置无效")
+    
+    # 验证MQTT配置
+    # ...
+    
+    return validation_result
+```
+
+### 4. 编码器模块
+
+编码器模块`encoder_module.py`实现了旋转编码器的位置计数、归零和触发拍照功能：
+
+- 支持A/B相计数和Z相归零
+- 使用GPIO中断实现精确计数
+- 提供位置触发机制，当位置达到设定值时调用回调函数
+- 包含资源管理和清理功能
+
+### 5. 图像处理与分级逻辑
+
+系统实现了基于图像处理的芦笋分级功能，通过轮廓检测确定芦笋等级：
+
+- **图像处理流程**：图像捕获 → 预处理 → 轮廓检测 → 特征分析 → 等级判断
+- **分级标准**：
+  - A级：轮廓面积大于15000像素
+  - B级：轮廓面积在5000-15000像素之间
+  - C级：轮廓面积小于5000像素
+- **预处理方法**: 去噪、调整亮度、对比度、饱和度、曝光时间
+- **阈值处理**: 自适应阈值、边缘检测
+- **图像质量**: 95% JPEG质量
+- **图像尺寸**: 1280x1024 (默认), 可配置
+
+### 6. 系统主流程
+
+1. 系统初始化（配置加载、组件初始化）
+2. 编码器和摄像头启动
+3. 主循环：
+   - 监控编码器位置
+   - 达到触发位置时拍照
+   - 图像处理和分级
+   - MQTT发布结果
+   - 统计信息更新
+4. 系统关闭（资源清理、离线状态发布）
+
+```python
+# 编码器初始化
+def __init__(self, pin_a: int, pin_b: int, pin_z: int):
+    self.pin_a = pin_a
+    self.pin_b = pin_b
+    self.pin_z = pin_z
+    
+    # 位置计数器
+    self.position = 0
+    self.position_lock = threading.Lock()
+    
+    # 运行状态
+    self.is_running = False
+    
+    # 位置触发回调
+    self.trigger_position = 150  # 默认触发位置
+    self.trigger_callback = None
+    self.last_trigger_position = 0  # 上次触发位置
+    
+    # GPIO初始化
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(self.pin_a, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(self.pin_b, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(self.pin_z, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    
+    # 配置中断
+    GPIO.add_event_detect(self.pin_a, GPIO.BOTH, callback=self._handle_encoder)
+    GPIO.add_event_detect(self.pin_z, GPIO.FALLING, callback=self._handle_zero)
 ```
 
 ## 🐛 问题解决记录
@@ -287,54 +419,72 @@ def _on_message(self, client, userdata, msg):
 **现象**: `Camera __init__ sequence did not complete`
 **原因**: 多个进程同时访问摄像头资源
 **解决方案**: 
+
+使用增强的进程查找方法，确保找到所有可能占用摄像头的进程：
+
 ```bash
-# 查找占用进程
-ps aux | grep -E '(camera|picamera|libcamera)' | grep -v grep
-# 终止占用进程
+# 查找所有相关进程（包括Python进程）
+ps aux | grep -E '(python|media|unicam|camera)' | grep -v grep
+
+# 正常终止进程
 kill <PID>
+
+# 如正常终止无效，使用强制终止
+kill -9 <PID>
+
+# 一次性终止多个占用进程
+kill <PID1> <PID2>
 ```
 
-### 问题5: SSH连接配置
-**现象**: 连接失败，IP地址错误
-**解决方案**: 使用正确的配置
-```
-Host: 192.168.2.192
-User: feng
-Key: keys/pi_id_ed25519
-```
+**注意**: 系统中可能存在长期运行的Python进程（如main.py）占用摄像头资源，需要优先终止这些进程。
+
 
 ## 📊 性能指标
 
 ### 传输性能
-- **照片大小**: 约480-490KB (1920x1080 JPEG)
-- **传输间隔**: 30秒/张（示例）
+- **照片大小**: 约1280x1024分辨率，JPEG格式，质量95%（实际大小约200-300KB）
+- **传输间隔**: 5.0秒/张（可配置）
 - **传输格式**: JSON + Base64（约增加33%-37%），过大时发送元数据与路径
 - **MQTT QoS**: 1（确保送达）
-- **传输成功率**: 视代理与网络而定（含重试机制）
+- **传输成功率**: 视代理与网络而定（含自动重连机制，最多10次重连尝试）
 
 ### 系统资源
 - **CPU使用率**: 约6-8% (树莓派4B)
 - **内存使用**: 约100MB
-- **网络带宽**: 约16KB/s (平均，30秒间隔)
+- **网络带宽**: 约16KB/s (平均，5秒间隔)
 
 
 
 ## 🚀 部署指南
 
-### 1. 环境准备
-```bash
-# 树莓派端
-sudo apt update
-sudo apt install python3-pip python3-picamera2
-pip3 install paho-mqtt
+### 配置文件设置
 
-# Windows端
-# 安装SSH客户端和Python环境
+系统使用两种配置文件：
+
+#### YAML配置文件（integrated_config.yaml）
+```yaml
+# 系统基本配置
+system:
+  name: "芦笋分拣系统"
+  version: "1.0.0"
+  debug: false
+  log_level: "INFO"
+  data_dir: "data"
+  log_dir: "logs"
+
+# 摄像头配置
+camera:
+  enabled: true
+  device_id: 0
+  resolution: [1280, 1024]
+  fps: 30
+  auto_capture: true
+  capture_interval: 5.0  # 五秒间隔拍照
+  capture_only: true     # 仅拍照模式
 ```
 
-### 2. 配置文件设置
+#### JSON配置文件（mqtt_config.json）
 ```json
-// mqtt_config.json
 {
     "broker": {
         "host": "voicevon.vicp.io",
@@ -353,10 +503,42 @@ pip3 install paho-mqtt
     "settings": {
         "qos": 1,
         "retain": false,
-        "keepalive": 60
+        "keepalive": 60,
+        "reconnect_delay": 5,
+        "max_reconnect_attempts": 10
     }
 }
 ```
+
+### 系统稳定性保障
+
+系统设计强调关键组件的可靠性，采用以下机制确保稳定运行：
+
+- **组件初始化验证**：所有关键组件（摄像头、MQTT等）必须成功初始化，否则系统将无法启动
+- **错误处理机制**：完善的异常捕获和日志记录，便于问题诊断
+- **资源管理**：严格的资源获取和释放机制，避免资源泄露
+
+### 日志配置
+
+系统日志配置遵循以下原则：
+- 使用Python标准logging模块
+- 日志级别可通过配置文件设置（默认为INFO）
+- 支持debug模式下的详细日志
+- 日志输出包括系统状态、错误信息和操作记录
+
+### 图像处理与分级逻辑
+
+系统实现了基于图像处理的芦笋分级功能，通过轮廓检测确定芦笋等级：
+
+- **图像处理流程**：图像捕获 → 预处理 → 轮廓检测 → 特征分析 → 等级判断
+- **分级标准**：
+  - A级：轮廓面积大于15000像素
+  - B级：轮廓面积在5000-15000像素之间
+  - C级：轮廓面积小于5000像素
+- **预处理方法**: 高斯模糊、中值滤波、双边滤波、调整亮度、对比度
+- **阈值处理**: 自适应阈值、Otsu阈值、边缘检测
+- **图像质量**: JPEG格式，质量95%
+- **图像尺寸**: 1280x1024像素
 
 
 

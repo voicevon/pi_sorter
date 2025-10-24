@@ -54,7 +54,7 @@ class ConfigManager:
                 'log_level': 'INFO'
             },
             'camera': {
-                'enabled': True,
+                'enabled': True,  # 摄像头必须启用，系统依赖摄像头功能
                 'device_id': 0,
                 'resolution': [1280, 1024],
                 'fps': 30,
@@ -63,7 +63,7 @@ class ConfigManager:
                 'saturation': 0.5,
                 'exposure': -1,
                 'auto_capture': True,
-                'capture_interval': 5.0  # 五秒间隔拍照
+                'capture_interval': 5.0
             },
             'mqtt': {
                 'enabled': False,
@@ -81,7 +81,7 @@ class ConfigManager:
                 }
             },
             'processing': {
-                'interval': 5.0,  # 处理间隔（秒）
+                'interval': 5.0,
                 'save_results': True,
                 'save_images': True,
                 'save_raw_images': True,

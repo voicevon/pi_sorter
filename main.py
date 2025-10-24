@@ -11,6 +11,7 @@ import signal
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
+import RPi.GPIO as GPIO
 
 # 添加src目录到Python路径
 current_dir = Path(__file__).parent
@@ -20,7 +21,7 @@ sys.path.insert(0, str(src_dir))
 # 导入集成系统模块
 from external.integrated_system import IntegratedSorterSystem
 from external.config_manager import ConfigManager
-from external.encoder_module import RotaryEncoder
+from external.encoder_module_lgpio import RotaryEncoderLGPIO as RotaryEncoder
 
 
 class AsparagusSystem:
@@ -33,6 +34,15 @@ class AsparagusSystem:
         self.config_manager = ConfigManager()
         self.integrated_system: Optional[IntegratedSorterSystem] = None
         self.encoder: Optional[RotaryEncoder] = None
+        
+        # LED监控引脚配置（BCM编码）
+        self.LED_PIN = 16  # GPIO16 - 主进程LED监控
+        self.ENCODER_LED_PIN = 12  # GPIO12 - 编码器LED监控
+        self.led_state = False
+        self.last_led_toggle = time.time()
+        self.encoder_led_state = False
+        self.encoder_zero_triggered = False
+        self.encoder_count_since_zero = 0
         
         # 注册信号处理器
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -70,12 +80,7 @@ class AsparagusSystem:
         Returns:
             bool: 环境检查是否通过
         """
-        try:
-            import cv2
-            self.logger.info(f"OpenCV版本: {cv2.__version__}")
-        except ImportError:
-            self.logger.error("OpenCV未安装")
-            return False
+        # 不再使用OpenCV，仅使用picamera2
         
         try:
             import numpy as np
@@ -140,6 +145,18 @@ class AsparagusSystem:
             self.logger.info("芦笋分拣系统启动 - 集成版本")
             self.logger.info(f"系统版本: {config.get('system', {}).get('version', '1.0.0')}")
             
+            # 初始化LED
+            try:
+                GPIO.setmode(GPIO.BCM)
+                GPIO.setup(self.LED_PIN, GPIO.OUT)
+                GPIO.setup(self.ENCODER_LED_PIN, GPIO.OUT)
+                GPIO.output(self.LED_PIN, GPIO.LOW)
+                GPIO.output(self.ENCODER_LED_PIN, GPIO.LOW)
+                self.logger.info(f"LED监控初始化成功，主进程LED使用GPIO{self.LED_PIN}，编码器LED使用GPIO{self.ENCODER_LED_PIN}")
+            except Exception as e:
+                self.logger.error(f"LED监控初始化失败: {str(e)}")
+                # LED初始化失败不影响系统运行，只记录错误
+            
             # 验证配置
             validation = self.config_manager.validate_config()
             if not validation['valid']:
@@ -166,13 +183,19 @@ class AsparagusSystem:
                 self.logger.error("系统初始化失败")
                 return False
             
+            # 验证摄像头是否可用
+            if not self.integrated_system.camera_available:
+                self.logger.warning("摄像头不可用，系统将以模拟模式运行")
+            else:
+                self.logger.info("摄像头初始化成功，系统可以正常捕获图像")
+            
             # 初始化编码器
             try:
                 self.logger.info("初始化编码器...")
                 # GPIO引脚配置（BCM编码）
-                PIN_A = 4   # GPIO4
-                PIN_B = 5   # GPIO5
-                PIN_Z = 6   # GPIO6
+                PIN_A = 15   # GPIO15 - 编码器A相
+                PIN_B = 18   # GPIO18 - 编码器B相  
+                PIN_Z = 14   # GPIO14 - 编码器Z相（归零信号）
                 
                 self.encoder = RotaryEncoder(PIN_A, PIN_B, PIN_Z)
                 # 设置触发位置和回调函数
@@ -209,6 +232,13 @@ class AsparagusSystem:
             self.logger.info("分拣处理已启动")
             self.logger.info("进入主循环...")
             
+            # 初始化LED状态
+            self.led_state = False
+            self.last_led_toggle = time.time()
+            self.encoder_led_state = False
+            self.encoder_zero_triggered = False
+            self.encoder_count_since_zero = 0
+            
             while self.system_running:
                 try:
                     status = self.integrated_system.get_system_status()
@@ -223,6 +253,43 @@ class AsparagusSystem:
                         position = self.encoder.get_position()
                         if position % 50 == 0:  # 每50个脉冲记录一次位置
                             self.logger.info(f"当前编码器位置: {position}")
+                    
+                    # LED监控：每秒钟切换一次状态
+                    current_time = time.time()
+                    if current_time - self.last_led_toggle >= 1.0:
+                        self.led_state = not self.led_state
+                        try:
+                            GPIO.output(self.LED_PIN, GPIO.HIGH if self.led_state else GPIO.LOW)
+                        except Exception as e:
+                            self.logger.error(f"主进程LED控制失败: {str(e)}")
+                        self.last_led_toggle = current_time
+                    
+                    # 编码器状态监控LED
+                    if self.encoder:
+                        position = self.encoder.get_position()
+                        
+                        # 检测编码器归零信号（通过位置变化判断）
+                        if position == 0 and not self.encoder_zero_triggered:
+                            self.encoder_zero_triggered = True
+                            self.encoder_count_since_zero = 0
+                            self.encoder_led_state = True
+                            try:
+                                GPIO.output(self.ENCODER_LED_PIN, GPIO.HIGH)
+                                self.logger.info("编码器Z相触发，LED亮起")
+                            except Exception as e:
+                                self.logger.error(f"编码器LED控制失败: {str(e)}")
+                        
+                        # 计数并控制LED
+                        if self.encoder_zero_triggered:
+                            self.encoder_count_since_zero += 1
+                            if self.encoder_count_since_zero >= 5:
+                                self.encoder_led_state = False
+                                self.encoder_zero_triggered = False
+                                try:
+                                    GPIO.output(self.ENCODER_LED_PIN, GPIO.LOW)
+                                    self.logger.info("编码器计数达到5，LED关闭")
+                                except Exception as e:
+                                    self.logger.error(f"编码器LED控制失败: {str(e)}")
                     
                     time.sleep(0.1)  # 缩短睡眠时间以提高编码器响应性
                     
@@ -253,6 +320,15 @@ class AsparagusSystem:
                 
                 self.logger.info("关闭集成系统...")
                 self.integrated_system.shutdown()
+            
+            # 关闭LED
+            try:
+                GPIO.output(self.LED_PIN, GPIO.LOW)
+                GPIO.output(self.ENCODER_LED_PIN, GPIO.LOW)
+                GPIO.cleanup([self.LED_PIN, self.ENCODER_LED_PIN])
+                self.logger.info("所有LED监控已关闭")
+            except Exception as e:
+                self.logger.error(f"LED清理失败: {str(e)}")
             
             self.logger.info("系统运行完成")
             

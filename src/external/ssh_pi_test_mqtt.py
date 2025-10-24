@@ -609,6 +609,58 @@ class SorterMQTTManager:
         except Exception as e:
             self.logger.error(f"发布消息失败: {str(e)}")
             return False
+
+    def publish_raw_message(self, topic: str, payload: bytes, qos: int = 1, retain: bool = False) -> bool:
+        """
+        发布原始二进制消息（用于发送图像等二进制数据）
+        
+        Args:
+            topic: MQTT主题
+            payload: 二进制消息内容
+            qos: 服务质量等级
+            retain: 是否保留消息
+            
+        Returns:
+            bool: 发布是否成功
+        """
+        if not self.client or not self.client.is_alive():
+            self.logger.error("MQTT客户端未连接")
+            return False
+        
+        try:
+            # 直接调用paho-mqtt的原始publish方法，避免字符串转换
+            result = self.client.client.publish(topic, payload, qos, retain)
+            
+            # 检查返回值类型，处理不同的返回格式
+            if isinstance(result, tuple):
+                # 如果返回的是元组 (result_code, message_id)
+                result_code, _ = result
+                if result_code == mqtt.MQTT_ERR_SUCCESS:
+                    self.logger.debug(f"MQTT二进制消息发布成功: {topic} (大小: {len(payload)}字节)")
+                    return True
+                else:
+                    self.logger.error(f"MQTT二进制消息发布失败，错误码: {result_code}")
+                    return False
+            elif hasattr(result, 'rc'):
+                # 如果返回的是结果对象
+                if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                    self.logger.debug(f"MQTT二进制消息发布成功: {topic} (大小: {len(payload)}字节)")
+                    return True
+                else:
+                    self.logger.error(f"MQTT二进制消息发布失败，错误码: {result.rc}")
+                    return False
+            else:
+                # 如果返回的是简单的布尔值或其他
+                if result:
+                    self.logger.debug(f"MQTT二进制消息发布成功: {topic} (大小: {len(payload)}字节)")
+                    return True
+                else:
+                    self.logger.error(f"MQTT二进制消息发布失败")
+                    return False
+                
+        except Exception as e:
+            self.logger.error(f"发布二进制消息失败: {str(e)}")
+            return False
     
     def shutdown(self):
         """关闭MQTT管理器"""

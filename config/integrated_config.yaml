@@ -10,6 +10,13 @@ system:
   data_dir: "data"
   log_dir: "logs"
 
+# 树莓派连接配置（集中管理IP地址等连接信息）
+raspberry_pi:
+  host: "192.168.121.115"  # 树莓派IP地址
+  hostname: "pi4"         # 主机名
+  username: "feng"       # SSH用户名
+  ssh_key: "config/pi_id_ed25519"  # SSH私钥路径
+
 # 摄像头配置 (引用自ssh pi test项目)
 camera:
   enabled: true
@@ -30,8 +37,8 @@ camera:
   capture_only: true     # 仅拍照模式：不做算法；如启用MQTT则仅发送抓拍图片
   
   # 图像保存设置
-  save_raw_images: true
-  save_processed_images: true
+  save_raw_images: false
+  save_processed_images: false
   image_format: "jpg"
   image_quality: 95
   
@@ -61,6 +68,9 @@ mqtt:
   # QoS设置
   qos_level: 1
   retain_messages: false
+  
+  # 二进制payload设置
+  binary_payload: true  # 使用二进制payload发送图像（true=直接发送二进制，false=JSON+Base64）
   
   # 主题配置
   topics:
@@ -209,7 +219,7 @@ processing:
   
   # 结果保存
   save_results: true
-  save_images: true
+  save_images: false
   save_statistics: true
   
   # 数据格式

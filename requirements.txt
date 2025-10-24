@@ -1,0 +1,21 @@
+# 树莓派芦笋分拣系统依赖包
+# 安装命令: pip install -r requirements.txt
+
+# 摄像头控制 - 64位系统专用
+picamera2==0.3.17
+
+# MQTT通信
+paho-mqtt==1.6.1
+
+# 图像处理
+opencv-python==4.8.1.78
+numpy==1.24.3
+
+# 配置管理
+PyYAML==6.0.1
+
+# GPIO控制
+RPi.GPIO==0.7.1
+
+# 日志记录（可选，系统自带）
+# logging

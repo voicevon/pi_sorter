@@ -100,6 +100,22 @@ def test_environment_detection():
         else:
             print(f"❌ {file_path} (不存在)")
     
+    # 读取配置文件中的树莓派IP地址
+    def get_pi_ip_from_config():
+        config_path = Path(current_dir) / "config" / "integrated_config.yaml"
+        if config_path.exists():
+            try:
+                import yaml
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                    return config.get('raspberry_pi', {}).get('host', '192.168.2.192')
+            except Exception as e:
+                print(f"❌ 配置文件读取错误: {e}")
+        return '192.168.2.192'  # 默认值
+    
+    # 获取预期的IP地址
+    expected_pi_ip = get_pi_ip_from_config()
+    
     # 检查SSH配置
     ssh_config_path = Path(current_dir) / "config" / "ssh_config.txt"
     if ssh_config_path.exists():
@@ -107,10 +123,10 @@ def test_environment_detection():
         try:
             with open(ssh_config_path, 'r', encoding='utf-8') as f:
                 ssh_content = f.read()
-                if "192.168.2.192" in ssh_content:
-                    print("✅ SSH配置包含正确的主机信息")
+                if expected_pi_ip in ssh_content:
+                    print(f"✅ SSH配置包含正确的主机信息: {expected_pi_ip}")
                 else:
-                    print("❌ SSH配置信息不完整")
+                    print(f"❌ SSH配置信息不完整，期望IP: {expected_pi_ip}")
         except Exception as e:
             print(f"❌ SSH配置读取错误: {e}")
     else:
