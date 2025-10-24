@@ -1,0 +1,302 @@
+# 集成芦笋分拣系统配置文件
+# Integrated asparagus sorting system configuration
+
+# 系统基本配置
+system:
+  name: "芦笋分拣系统"
+  version: "1.0.0"
+  debug: false
+  log_level: "INFO"
+  data_dir: "data"
+  log_dir: "logs"
+
+# 摄像头配置 (引用自ssh pi test项目)
+camera:
+  enabled: true
+  device_id: 0
+  resolution: [1280, 1024]
+  fps: 30
+  
+  # 摄像头参数
+  brightness: 0.5
+  contrast: 0.5
+  saturation: 0.5
+  exposure: -1
+  white_balance: "auto"
+  
+  # 自动捕获设置
+  auto_capture: true
+  capture_interval: 5.0  # 五秒间隔拍照
+  capture_only: true     # 仅拍照模式：不做算法；如启用MQTT则仅发送抓拍图片
+  
+  # 图像保存设置
+  save_raw_images: true
+  save_processed_images: true
+  image_format: "jpg"
+  image_quality: 95
+  
+  # 图像处理区域
+  roi:
+    enabled: false
+    x: 0
+    y: 0
+    width: 1280
+    height: 1024
+
+# MQTT配置 (引用自ssh pi test项目)
+mqtt:
+  enabled: true
+  broker_host: "voicevon.vicp.io"
+  broker_port: 1883
+  client_id: "pi_sorter_integrated"
+  username: "admin"
+  password: "admin1970"
+  
+  # 连接设置
+  keepalive: 60
+  clean_session: true
+  reconnect_delay: 5
+  max_reconnect_attempts: 10
+  
+  # QoS设置
+  qos_level: 1
+  retain_messages: false
+  
+  # 主题配置
+  topics:
+    status: "pi_sorter/status"
+    results: "pi_sorter/results"
+    commands: "pi_sorter/commands"
+    images: "pi_sorter/images"
+    alerts: "pi_sorter/alerts"
+    statistics: "pi_sorter/statistics"
+    heartbeat: "pi_sorter/heartbeat"
+  
+  # 消息设置
+  message_timeout: 30
+  max_message_size: 1048576  # 1MB
+
+# 图像处理配置
+image_processing:
+  # 预处理参数
+  preprocessing:
+    gaussian_blur_kernel: [5, 5]
+    gaussian_blur_sigma: 0
+    median_filter_kernel: 5
+    bilateral_filter_d: 9
+    bilateral_filter_sigma_color: 75
+    bilateral_filter_sigma_space: 75
+  
+  # 阈值处理
+  thresholding:
+    method: "adaptive"  # "binary", "adaptive", "otsu"
+    threshold_value: 127
+    max_value: 255
+    adaptive_method: "gaussian"  # "mean", "gaussian"
+    adaptive_type: "binary"  # "binary", "binary_inv"
+    block_size: 11
+    c_constant: 2
+  
+  # 轮廓检测
+  contour_detection:
+    mode: "external"  # "external", "list", "ccomp", "tree"
+    method: "simple"  # "none", "simple", "tc89_l1", "tc89_kcos"
+    min_area: 500
+    max_area: 50000
+    min_perimeter: 100
+    max_perimeter: 2000
+
+# 芦笋特征检测配置
+asparagus_detection:
+  # 长度测量
+  length:
+    min_length: 100  # mm
+    max_length: 300  # mm
+    measurement_method: "contour_length"
+    calibration_factor: 1.0  # pixels per mm
+  
+  # 直径测量
+  diameter:
+    min_diameter: 8   # mm
+    max_diameter: 25  # mm
+    measurement_points: 5
+    measurement_method: "average"
+  
+  # 弯曲度检测
+  curvature:
+    max_curvature: 0.1
+    measurement_segments: 10
+    smoothing_factor: 0.1
+  
+  # 表面缺陷检测
+  defect_detection:
+    enabled: true
+    min_defect_area: 50
+    max_defect_ratio: 0.1
+    defect_types:
+      - "spots"
+      - "cracks"
+      - "discoloration"
+      - "deformation"
+
+# 质量分级配置
+quality_grading:
+  # 分级标准
+  grades:
+    A:
+      length_range: [180, 220]      # mm
+      diameter_range: [12, 18]      # mm
+      max_curvature: 0.05
+      max_defect_ratio: 0.02
+      min_score: 85
+    
+    B:
+      length_range: [150, 250]      # mm
+      diameter_range: [10, 20]      # mm
+      max_curvature: 0.08
+      max_defect_ratio: 0.05
+      min_score: 70
+    
+    C:
+      length_range: [100, 300]      # mm
+      diameter_range: [8, 25]       # mm
+      max_curvature: 0.15
+      max_defect_ratio: 0.15
+      min_score: 50
+  
+  # 评分权重
+  scoring_weights:
+    length: 0.25
+    diameter: 0.25
+    curvature: 0.20
+    surface_quality: 0.20
+    shape_regularity: 0.10
+  
+  # 决策树参数
+  decision_tree:
+    max_depth: 5
+    min_samples_split: 10
+    min_samples_leaf: 5
+
+# 编码器配置
+encoder:
+  # GPIO引脚配置（BCM编码）
+  pin_a: 4   # GPIO4
+  pin_b: 5   # GPIO5
+  pin_z: 6   # GPIO6
+  
+  # 触发配置
+  trigger_position: 150  # 触发位置（脉冲数）
+  trigger_interval: 100  # 两次触发的最小间隔（脉冲数）
+  
+  # 编码器参数
+  pulses_per_revolution: 200  # 每转脉冲数
+  direction: "clockwise"  # 计数方向：clockwise或counterclockwise
+
+# 处理流程配置
+processing:
+  # 处理间隔
+  interval: 5.0  # seconds
+  
+  # 批处理设置
+  batch_processing: false
+  batch_size: 10
+  batch_timeout: 30
+  
+  # 性能设置
+  max_processing_time: 5.0  # seconds
+  timeout_action: "skip"  # "skip", "retry", "alert"
+  
+  # 结果保存
+  save_results: true
+  save_images: true
+  save_statistics: true
+  
+  # 数据格式
+  output_format: "json"  # "json", "csv", "xml"
+  timestamp_format: "%Y-%m-%d %H:%M:%S"
+
+# 数据管理配置
+data_management:
+  # 数据保存路径
+  base_path: "data"
+  subdirectories:
+    images: "images"
+    results: "results"
+    logs: "logs"
+    statistics: "statistics"
+    backups: "backups"
+  
+  # 文件命名
+  filename_format: "{timestamp}_{item_id}_{grade}"
+  timestamp_format: "%Y%m%d_%H%M%S"
+  
+  # 数据清理
+  auto_cleanup: true
+  retention_days: 30
+  max_storage_gb: 10
+  
+  # 备份设置
+  backup_enabled: true
+  backup_interval: 24  # hours
+  backup_location: "backups"
+
+# 性能监控配置
+performance:
+  # 监控指标
+  monitor_cpu: true
+  monitor_memory: true
+  monitor_disk: true
+  monitor_network: true
+  monitor_temperature: true
+  
+  # 性能阈值
+  thresholds:
+    cpu_usage: 80      # %
+    memory_usage: 80   # %
+    disk_usage: 90     # %
+    temperature: 70    # °C
+  
+  # 统计设置
+  statistics_interval: 60  # seconds
+  performance_log_interval: 300  # seconds
+
+# 错误处理配置
+error_handling:
+  # 重试设置
+  max_retries: 3
+  retry_delay: 1.0
+  exponential_backoff: true
+  
+  # 错误类型处理
+  camera_error_action: "retry"     # "retry", "skip", "stop"
+  mqtt_error_action: "retry"       # "retry", "skip", "continue"
+  processing_error_action: "skip"  # "retry", "skip", "stop"
+  
+  # 告警设置
+  alert_on_errors: true
+  alert_threshold: 5  # errors per minute
+  
+  # 日志设置
+  log_errors: true
+  error_log_level: "ERROR"
+
+# 调试和测试配置
+debug:
+  # 调试模式
+  enabled: false
+  verbose_logging: false
+  save_debug_images: false
+  
+  # 测试模式
+  test_mode: false
+  mock_camera: false
+  mock_mqtt: false
+  
+  # 性能分析
+  profile_performance: false
+  benchmark_mode: false
+  
+  # 可视化
+  show_processing_steps: false
+  display_results: false

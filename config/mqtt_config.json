@@ -1,0 +1,33 @@
+{
+    "broker": {
+        "host": "voicevon.vicp.io",
+        "port": 1883,
+        "username": "admin",
+        "password": "admin1970",
+        "client_id": "pi_sorter_integrated"
+    },
+    "topics": {
+        "images": "pi_sorter/images",
+        "status": "pi_sorter/status",
+        "results": "pi_sorter/results",
+        "alerts": "pi_sorter/alerts",
+        "statistics": "pi_sorter/statistics",
+        "heartbeat": "pi_sorter/heartbeat",
+        "commands": "pi_sorter/commands"
+    },
+    "settings": {
+        "qos": 1,
+        "retain": false,
+        "keepalive": 60,
+        "clean_session": true,
+        "reconnect_delay": 5,
+        "max_reconnect_attempts": 10,
+        "max_photo_size": 5242880,
+        "compression": false
+    },
+    "metadata": {
+        "include_timestamp": true,
+        "include_device_info": true,
+        "include_camera_settings": true
+    }
+}
